@@ -152,7 +152,30 @@ cabs:
       tocol:
         dtype: str
 
-
+  chgcentre:
+    image:
+      name: wsclean
+    command: chgcentre
+    info: "Recompute UVWs and rotate visibilities to a new specified phase centre using the cghcentre tool"
+    inputs:
+      ms:
+        info: "Measurement Set to process"
+        required: true
+        dtype: MS
+        policies:
+          positional: true
+      ra:
+        info: "Right Ascension string for new phase centre (00h00m00.0s or 00:00:00.0)"
+        required: true
+        dtype: str
+        policies:
+          positional: true
+      dec:
+        info: "Declination string for new phase centre (00d00m00.0s or 00.00.00.0)"
+        required: true
+        dtype: str
+        policies:
+        positional: true
 
 
 
