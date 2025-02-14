@@ -1,4 +1,5 @@
 #!/usr/bin/env python
+
 import re
 import numpy
 import sys, os
@@ -16,7 +17,7 @@ from astropy.coordinates import get_body_barycentric, get_body, get_moon
 
 #________________________________________________________________________________________________________________________________________________________
 
-#Auxiliar functions
+# Auxiliary functions
 
 def hms2deg(hms):
     '''
@@ -236,7 +237,7 @@ def get_sun_coordinates(ms, output_file):
             sun_ra = sun.ra.value
             sun_dec = sun.dec.value
             sun_hms, sun_dms = format_coords(sun_ra, sun_dec)
-            lines.append("{} {}".format(sun_hms, sun_dms))
+            lines.append("{} {} {}".format(ms, sun_hms, sun_dms))
 
     maintab.close()
 
@@ -249,37 +250,54 @@ def get_sun_coordinates(ms, output_file):
 
 #________________________________________________________________________________________________________________________________________________________
 
-def shift_coordinates(ms_list, coords, splitted_ms_dir, datacolumn='all'):
+def read_sun_coordinates(input_file):
     '''
-    A funtion that takes a list of scans and coordinates shift/rephase it for a specific colunm (CORRECTED_DATA) and iutput in the splitted_ms_dir directory 
-    Parameters:
-    ms_list (list): Path to the Measurement Sets.
-    coords (File): Path to the coordinate file.
-    splitted_ms_dir (Directory): Path to the scans directory
-    datacolumn (str): Datacolumn to use (when not defined default is 'all').
+    Open the coordinates text file written by get_sun_coordinates and return a list of (ms,ra,dec) tuples.
     '''
     coordinates = []
-    with open(coords, 'r') as file:
+    with open(input_file, 'r') as file:
         for line in file:
-            ra, dec = line.strip().split() # Assuming RA and Dec are separated by a space
-            coordinates.append((ra,dec))
+            ms, ra, dec = line.strip().split() # Assuming RA and Dec are separated by a space
+            coordinates.append((ms, ra, dec))
+    return coordinates
 
-    #Sort the ms_list in numerical order
-    sorted_ms_list = sorted(ms_list, key=lambda x: int(x.split('_scan_')[1].split('.')[0]))
-    print(sorted_ms_list)
-    chgcentre_path= '/home/samboco/solarKAT/Git_clone/wsclean/build/chgcentre'
 
-    for ms, (ra, dec) in zip(sorted_ms_list, coordinates):
-        #for ms in sorted_ms_list:
-        command=[chgcentre_path, ms, ra, dec]
-        try:
-            subprocess.run(command, check=True)
-            print("Successfully processed RA: {}, Dec:{} for MS: {}".format(ra, dec, ms))
-        except subprocess.CalledProcessError as e:
-            print("Error processing RA: {}, Dec: {} for MS: {}".format(ra, dec, ms))
-            print("Error message: {}".format(e))
+# #________________________________________________________________________________________________________________________________________________________
+
+# def shift_coordinates(ms_list, coords, splitted_ms_dir, datacolumn='all'):
+#     '''
+#     A funtion that takes a list of scans and coordinates shift/rephase it for a specific colunm (CORRECTED_DATA) and iutput in the splitted_ms_dir directory 
+#     Parameters:
+#     ms_list (list): Path to the Measurement Sets.
+#     coords (File): Path to the coordinate file.
+#     splitted_ms_dir (Directory): Path to the scans directory
+#     datacolumn (str): Datacolumn to use (when not defined default is 'all').
+#     '''
+#     coordinates = []
+#     with open(coords, 'r') as file:
+#         for line in file:
+#             ms, ra, dec = line.strip().split() # Assuming RA and Dec are separated by a space
+#             coordinates.append((ms, ra, dec))
+
+#     #Sort the ms_list in numerical order
+#     sorted_ms_list = sorted(ms_list, key=lambda x: int(x.split('_scan_')[1].split('.')[0]))
+#     print(sorted_ms_list)
+#     chgcentre_path= '/home/samboco/solarKAT/Git_clone/wsclean/build/chgcentre'
+
+#     for ms, (ra, dec) in zip(sorted_ms_list, coordinates):
+#         #for ms in sorted_ms_list:
+#         command=[chgcentre_path, ms, ra, dec]
+#         try:
+#             subprocess.run(command, check=True)
+#             print("Successfully processed RA: {}, Dec:{} for MS: {}".format(ra, dec, ms))
+#         except subprocess.CalledProcessError as e:
+#             print("Error processing RA: {}, Dec: {} for MS: {}".format(ra, dec, ms))
+#             print("Error message: {}".format(e))
+
+
 
 #________________________________________________________________________________________________________________________________________________________
+
 
 def create_ds9_region_from_file(input_file, output_dir, ms):
     """
@@ -414,4 +432,19 @@ def copy_model_data_to_model_data_sun(ms, ms_list, copycol, tocol):
 
 
 #________________________________________________________________________________________________________________________________________________________
+
+def get_sun_dirs(coords):
+    '''
+    Open the coords file and return a list of tuples with (RA,Dec,MS) for each scan
+    '''
+    coordinates = []
+    with open(coords, 'r') as file:
+        for line in file:
+            ra, dec, ms = line.strip().split()
+            coordinates.append((ra,dec))
+
+    return coordinates
+
+#________________________________________________________________________________________________________________________________________________________
+
 

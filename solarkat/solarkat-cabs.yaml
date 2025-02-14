@@ -1,4 +1,3 @@
-
 _include:
   (cultcargo):
     - casa-flag.yml
@@ -84,7 +83,7 @@ cabs:
         dtype: File
 
 
-  sun_coordinates:
+  get_sun_coordinates:
     command: solarkat.get_sun_coordinates
     flavour: python
     inputs:
@@ -94,6 +93,16 @@ cabs:
     outputs:
       output_file:
         dtype: File
+
+  read_sun_coordinates:
+    command: solarkat.read_sun_coordinates
+    flavour: python
+    inputs:
+      input_file:
+        dtype: File
+    outputs:
+      coordinates:
+        dtype: List[Tuple[MS,str,str]]
 
   shift_coords:
     command: solarkat.shift_coordinates
@@ -152,30 +161,19 @@ cabs:
       tocol:
         dtype: str
 
-  chgcentre:
-    image:
-      name: wsclean
-    command: chgcentre
-    info: "Recompute UVWs and rotate visibilities to a new specified phase centre using the cghcentre tool"
+
+  chgcentre_loop:
+    info: "Run chgcentre on multiple Measurement Sets."
+    for_loop:
+      var: coord
+      over: coord-list
+      display-status: "{index1}/{total}"
     inputs:
-      ms:
-        info: "Measurement Set to process"
+      coord-list:
+        dtype: List[Tuple[float,float,MS]]
         required: true
-        dtype: MS
-        policies:
-          positional: true
-      ra:
-        info: "Right Ascension string for new phase centre (00h00m00.0s or 00:00:00.0)"
-        required: true
-        dtype: str
-        policies:
-          positional: true
-      dec:
-        info: "Declination string for new phase centre (00d00m00.0s or 00.00.00.0)"
-        required: true
-        dtype: str
-        policies:
-        positional: true
+
+
 
 
 
