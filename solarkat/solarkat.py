@@ -197,7 +197,7 @@ def get_old_coords(ms_list, output_file):
 
 #________________________________________________________________________________________________________________________________________________________
 
-def get_sun_coordinates(ms, output_file):
+def get_scan_info(ms, output_file):
     '''
     Extracts the coordinates of the Sun from a measurement set and writes them to a file.
     Also writes the scan number and the name of the eventual per-scan MS
@@ -231,7 +231,7 @@ def get_sun_coordinates(ms, output_file):
 
     print("Extracting Sun coordinates from {}...".format(ms))
     for scan in scans:
-        opms = ms.replace('.ms',f'_scan_{scan}.ms')
+        scan_ms = ms.replace('.ms',f'_scan_{scan}.ms')
         subtab = maintab.query(query='SCAN_NUMBER==' + str(scan))
         t_scan = numpy.mean(subtab.getcol('TIME'))
         t = Time(t_scan / 86400.0, format='mjd')
@@ -241,7 +241,7 @@ def get_sun_coordinates(ms, output_file):
             sun_ra = sun.ra.value
             sun_dec = sun.dec.value
             sun_hms, sun_dms = format_coords(sun_ra, sun_dec)
-            lines.append(f"{opms} {scan} {sun_hms} {sun_dms}")
+            lines.append(f"{scan_ms} {scan} {sun_hms} {sun_dms}")
 
     maintab.close()
 
@@ -249,21 +249,21 @@ def get_sun_coordinates(ms, output_file):
         for line in lines:
             f.write(line + '\n')
 
-    print("Sun coordinates extracted and saved to {}.".format(output_file))
+    print("Per scan information extracted and saved to {}.".format(output_file))
 
 
 #________________________________________________________________________________________________________________________________________________________
 
-def read_sun_coordinates(input_file):
+def read_scan_info(input_file):
     '''
-    Open the coordinates text file written by get_sun_coordinates and return a list of (ms,ra,dec) tuples.
+    Open the scan info text file written by get_scan_info and return its contents
     '''
-    coordinates = []
+    scan_info = []
     with open(input_file, 'r') as file:
         for line in file:
-            ms, ra, dec = line.strip().split() # Assuming RA and Dec are separated by a space
-            coordinates.append((ms, ra, dec))
-    return coordinates
+            opms, scan, ra, dec = line.strip().split() # Assuming RA and Dec are separated by a space
+            scan_info.append((opms, scan, ra, dec))
+    return scan_info
 
 
 # #________________________________________________________________________________________________________________________________________________________

@@ -34,6 +34,8 @@ cabs:
         dtype: File
 
 
+  
+
   load_scan_numbers:
     command: |
       print(f"Loading scan numbers................")
@@ -83,8 +85,8 @@ cabs:
         dtype: File
 
 
-  get_sun_coordinates:
-    command: solarkat.get_sun_coordinates
+  get_scan_info:
+    command: solarkat.get_scan_info
     flavour: python
     inputs:
       ms:
@@ -94,15 +96,17 @@ cabs:
       output_file:
         dtype: File
 
-  read_sun_coordinates:
-    command: solarkat.read_sun_coordinates
+
+  read_scan_info:
+    command: solarkat.read_scan_info
     flavour: python
     inputs:
       input_file:
         dtype: File
     outputs:
       coordinates:
-        dtype: List[Tuple[MS,str,str]]
+        dtype: List[Tuple[str,str,str,str]]
+
 
   shift_coords:
     command: solarkat.shift_coordinates
@@ -117,6 +121,7 @@ cabs:
         dtype: Directory
       datacolumn:
         dtype: str
+
 
   create_ds9_regions:
     command: solarkat.create_ds9_region_from_file
@@ -161,17 +166,17 @@ cabs:
       tocol:
         dtype: str
 
-
-  chgcentre_loop:
-    info: "Run chgcentre on multiple Measurement Sets."
-    for_loop:
-      var: coord
-      over: coord-list
-      display-status: "{index1}/{total}"
-    inputs:
-      coord-list:
-        dtype: List[Tuple[float,float,MS]]
-        required: true
+  chgcentre
+  # chgcentre_loop:
+  #   info: "Run chgcentre on multiple Measurement Sets."
+  #   for_loop:
+  #     var: coord
+  #     over: coord-list
+  #     display-status: "{index1}/{total}"
+  #   inputs:
+  #     coord-list:
+  #       dtype: List[Tuple[float,float,MS]]
+  #       required: true
 
 
 
