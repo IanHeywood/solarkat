@@ -35,10 +35,12 @@ def dms2deg(dms):
     return dms_angle.degree
 
 
-def extract_scan_number(ms_scan):
-    # Extract the scan number from the scan file name using re
-    scan_number = re.search(r"scan_(\d+)\.ms", ms_scan).group(1)
-    return int(scan_number)
+# def extract_scan_number(ms_scan):
+#     # REDUNDANT?
+#     # Extract the scan number from the scan file name using re
+#     scan_number = re.search(r"scan_(\d+)\.ms", ms_scan).group(1)
+#     return int(scan_number)
+
 
 #________________________________________________________________________________________________________________________________________________________
 
@@ -198,6 +200,7 @@ def get_old_coords(ms_list, output_file):
 def get_sun_coordinates(ms, output_file):
     '''
     Extracts the coordinates of the Sun from a measurement set and writes them to a file.
+    Also writes the scan number and the name of the eventual per-scan MS
 
     Parameters:
     ms (str): Path to the measurement set file.
@@ -228,6 +231,7 @@ def get_sun_coordinates(ms, output_file):
 
     print("Extracting Sun coordinates from {}...".format(ms))
     for scan in scans:
+        opms = ms.replace('.ms',f'_scan_{scan}.ms')
         subtab = maintab.query(query='SCAN_NUMBER==' + str(scan))
         t_scan = numpy.mean(subtab.getcol('TIME'))
         t = Time(t_scan / 86400.0, format='mjd')
@@ -237,7 +241,7 @@ def get_sun_coordinates(ms, output_file):
             sun_ra = sun.ra.value
             sun_dec = sun.dec.value
             sun_hms, sun_dms = format_coords(sun_ra, sun_dec)
-            lines.append("{} {} {}".format(ms, sun_hms, sun_dms))
+            lines.append(f"{opms} {scan} {sun_hms} {sun_dms}")
 
     maintab.close()
 
