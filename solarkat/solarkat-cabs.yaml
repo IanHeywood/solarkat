@@ -1,15 +1,18 @@
 _include:
   (cultcargo):
-    - casa-flag.yml
+    - casa/flag.yml
     - breizorro.yml
-    - crystalball.yml
     - msutils.yml
     - bdsf.yml
     - wsclean.yml
     - quartical.yml
-
+    - chgcentre.yml
 
 cabs:
+  chgcentre: 
+    image:
+      version: 3.1-kern8-cc0.2.0
+
   rename_model_data:
     command: solarkat.rename_model_data_column
     flavour: python
@@ -22,35 +25,16 @@ cabs:
       newname:
         dtype: str
 
-  extract_and_save_scan_numbers:
-    info: 'Extract a list of unique scan numbers from a MS file. The scans output parameter is a>'
-    command: solarkat.extract_and_save_scan_numbers
-    flavour: python
-    inputs:
-      ms:
-        dtype: MS
-    outputs:
-      output_file:
-        dtype: File
-
-
-  
-
-  load_scan_numbers:
-    command: |
-      print(f"Loading scan numbers................")
-      with open(scans_file, 'r') as f:
-        scan_numbers = [line.strip() for line in f]
-      print('Loaded scan numbers:', scan_numbers)
-    flavour: python-code
-    inputs:
-      scans_file:
-        dtype: File
-    outputs:
-      scan_numbers:
-        dtype: List[str]
-
-
+  # extract_and_save_scan_numbers:
+  #   info: 'Extract a list of unique scan numbers from a MS file. The scans output parameter is a>'
+  #   command: solarkat.extract_and_save_scan_numbers
+  #   flavour: python
+  #   inputs:
+  #     ms:
+  #       dtype: MS
+  #   outputs:
+  #     output_file:
+  #       dtype: File
 
   splitms_scan:
     command: split
@@ -72,21 +56,8 @@ cabs:
         default: '{recipe.ms}-output'
         required: true
 
-
-  get_old_coords:
-    command: solarkat.get_old_coords
-    flavour: python
-    inputs:
-      ms_list:
-        dtype: List[MS]
-        required: true
-    outputs:
-      output_file:
-        dtype: File
-
-
-  get_scan_info:
-    command: solarkat.get_scan_info
+  get_scans_info:
+    command: solarkat.get_scans_info
     flavour: python
     inputs:
       ms:
@@ -96,46 +67,31 @@ cabs:
       output_file:
         dtype: File
 
-
-  read_scan_info:
-    command: solarkat.read_scan_info
-    flavour: python
+  read_scans_info:
+    flavour: python-code
+    command: |
+      scans_info = []
+      with open(input_file, 'r') as file:
+        for line in file:
+          opms, scan, sun_ra_hms, sun_dec_dms, orig_ra_hms, orig_dec_dms = line.strip().split()
+          print(f'{opms} {scan} {sun_ra_hms} {sun_dec_dms} {orig_ra_hms} {orig_dec_dms}')
+          scans_info.append((opms, scan, sun_ra_hms, sun_dec_dms, orig_ra_hms, orig_dec_dms))
     inputs:
       input_file:
         dtype: File
     outputs:
-      coordinates:
-        dtype: List[Tuple[str,str,str,str]]
-
-
-  shift_coords:
-    command: solarkat.shift_coordinates
-    flavour: python
-    inputs:
-      ms_list:
-        dtype: List[MS]
-      coords:
-        dtype: File
-        required: true
-      splitted_ms_dir:
-        dtype: Directory
-      datacolumn:
-        dtype: str
-
+      scans_info:
+        dtype: List[Tuple[str,str,str,str,str,str]]
 
   create_ds9_regions:
     command: solarkat.create_ds9_region_from_file
     flavour: python
-    info: 'A cab to create a region file of the position of the Sun from the sun_coordinates fil>'
+    info: 'A cab to create a region file of the position of the Sun from the sun_coordinates file'
     inputs:
       input_file:
         dtype: File
-        required: true
       output_dir:
-        dtype: Directory
-      ms:
-        dtype: MS
-        required: true
+        dtype: str
 
   add_model_data_column:
     command: solarkat.add_column_to_ms
@@ -151,7 +107,6 @@ cabs:
         dtype: str
         required: true
 
-
   copy_model_data_to_model_data_sun:
     command: solarkat.copy_model_data_to_model_data_sun 
     info: 'copying a column from a list of MS to a single ms'
@@ -166,19 +121,157 @@ cabs:
       tocol:
         dtype: str
 
-  chgcentre
-  # chgcentre_loop:
-  #   info: "Run chgcentre on multiple Measurement Sets."
-  #   for_loop:
-  #     var: coord
-  #     over: coord-list
-  #     display-status: "{index1}/{total}"
-  #   inputs:
-  #     coord-list:
-  #       dtype: List[Tuple[float,float,MS]]
-  #       required: true
+lib:
 
+  recipes:
 
+    chgcentre-to-sun-loop:
+      info: "Run chgcentre on the per-scan Measurement Sets to rotate to the position of the Sun"
+      inputs:
+        scans_info:
+          dtype: List[Tuple[str,str,str,str,str,str]]
+        # dir_out:
+        #   dtype: str
+        perscan_dir_out:
+          dtype: str
+      for_loop:
+        var: current_scan
+        over: scans_info
+        display_status: "{index1}/{total}"
+      steps:
+        phase-shift:
+          cab: chgcentre
+          params:
+            ms: ='{recipe.perscan_dir_out}/'+GETITEM(recipe.current_scan,0)
+            ra: =GETITEM(recipe.current_scan,2)
+            dec: =GETITEM(recipe.current_scan,3)
 
+    dirty-image-sun-loop:
+      info: "Make a dirty image of the Sun for each phase-rotated MS"
+      inputs:
+        scans_info:
+          dtype: List[Tuple[str,str,str,str,str,str]]
+        # dir_out:
+        #   dtype: str
+        perscan_dir_out:
+          dtype: str
+        dirty_image_sun_dir:
+          dtype: str
+        temp_dir:
+          dtype: str
+#        prefix:
+#          dtype: str
+      for_loop:
+        var: current_scan
+        over: scans_info
+        display_status: "{index1}/{total}"
+      steps:
+        image-dirty:
+          cab: wsclean
+          params:
+            scale: 1.1asec 
+            niter: 0
+            nchan: 1
+            size: 6000
+            ms: ='{recipe.perscan_dir_out}/'+GETITEM(recipe.current_scan,0)
+            column: CORRECTED_DATA
+            temp-dir: =recipe.temp_dir
+            save-source-list: =UNSET 
+            prefix: ="{recipe.dirty_image_sun_dir}/img_"+STRIPEXT(BASENAME(GETITEM(recipe.current_scan,0)))
+    
+    make-solar-mask-loop:
+      info: "Run breizorro to make a FITS mask based on the DS9 region for solar deconvolution"
+      inputs:
+        scans_info:
+          dtype: List[Tuple[str,str,str,str,str,str]]
+        dirty_image_sun_dir:
+          dtype: str
+      for_loop:
+        var: current_scan
+        over: scans_info
+        display_status: "{index1}/{total}"
+      steps:
+        make-solar-mask:
+          cab: breizorro
+          params:
+            restored-image: ="{recipe.dirty_image_sun_dir}/img_"+STRIPEXT(BASENAME(GETITEM(recipe.current_scan,0)))+"-image.fits"
+            threshold: 1e9
+            merge: ="{recipe.dirty_image_sun_dir}/sun-region-scan_"+GETITEM(recipe.current_scan,1)+".reg" 
+            outfile: ="{recipe.dirty_image_sun_dir}/img_"+STRIPEXT(BASENAME(GETITEM(recipe.current_scan,0)))+"-image.mask.fits"
+            outregion: =UNSET
+            outcatalog: =UNSET
 
+    clean-image-sun-loop:
+      info: "Make a deconvolve image of the Sun for each phase-rotated MS"
+      inputs:
+        scans_info:
+          dtype: List[Tuple[str,str,str,str,str,str]]
+        # dir_out:
+        #   dtype: str
+        perscan_dir_out:
+          dtype: str
+        dirty_image_sun_dir:
+          dtype: str
+        clean_image_sun_dir:
+          dtype: str
+        temp_dir:
+          dtype: str
+#        prefix:
+#          dtype: str
+      for_loop:
+        var: current_scan
+        over: scans_info
+        display_status: "{index1}/{total}"
+      steps:
+        image-clean:
+          cab: wsclean
+          params:
+            abs-mem: 110
+            j: 8
+            deconvolution-threads: 8
+            ms: ='{recipe.perscan_dir_out}/'+GETITEM(recipe.current_scan,0)
+            size:  6000
+            scale: 1.1asec 
+            niter: 12000
+            multiscale: true
+            join-channels: true 
+            auto-threshold: 1
+            fit-spectral-pol: 4
+            save-source-list: true 
+            nchan: 6
+            column: CORRECTED_DATA 
+            temp-dir: =recipe.temp_dir
+            prefix: ="{recipe.clean_image_sun_dir}/img_"+STRIPEXT(BASENAME(GETITEM(recipe.current_scan,0)))
+            fits-mask: ="{recipe.dirty_image_sun_dir}/img_"+STRIPEXT(BASENAME(GETITEM(recipe.current_scan,0)))+"-image.mask.fits"
 
+    chgcentre-revert-loop:
+      info: "Run chgcentre on the per-scan Measurement Sets to rotate back to the original phase centre"
+      inputs:
+        scans_info:
+          dtype: List[Tuple[str,str,str,str,str,str]]
+        # dir_out:
+        #   dtype: str
+        perscan_dir_out:
+          dtype: str
+      for_loop:
+        var: current_scan
+        over: scans_info
+        display_status: "{index1}/{total}"
+      steps:
+        phase-shift:
+          cab: chgcentre
+          params:
+            ms: ='{recipe.perscan_dir_out}/'+GETITEM(recipe.current_scan,0)
+            ra: =GETITEM(recipe.current_scan,4)
+            dec: =GETITEM(recipe.current_scan,5)
+
+            # scale: 1.1asec 
+            # niter: 0
+            # nchan: 1
+            # size: 6000
+            # ms: ='{recipe.perscan_dir_out}/'+GETITEM(recipe.current_scan,0)
+            # column: CORRECTED_DATA
+            # temp-dir: =recipe.temp_dir
+            # save-source-list: =UNSET 
+            # prefix: ="{recipe.dirty_image_sun_dir}/img_"+STRIPEXT(BASENAME(GETITEM(recipe.current_scan,0)))
+    

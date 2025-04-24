@@ -1,23 +1,20 @@
 #!/usr/bin/env python
 
+
 import re
 import numpy
-import sys, os
-import subprocess
+#import sys, os
+#import subprocess
 import numpy as np
 from astropy.time import Time
-from pyrap.tables import table
+from casacore.tables import table
 from astropy import units as u
-from  MSUtils.msutils import addcol
-from astropy.coordinates import Angle
+from MSUtils.msutils import addcol
+#from astropy.coordinates import Angle
 from astropy.coordinates import SkyCoord
 from astropy.coordinates import solar_system_ephemeris, EarthLocation, AltAz
-from astropy.coordinates import get_body_barycentric, get_body, get_moon
+from astropy.coordinates import get_body #, get_body_barycentric
 
-
-#________________________________________________________________________________________________________________________________________________________
-
-# Auxiliary functions
 
 def hms2deg(hms):
     '''
@@ -35,47 +32,11 @@ def dms2deg(dms):
     return dms_angle.degree
 
 
-# def extract_scan_number(ms_scan):
-#     # REDUNDANT?
-#     # Extract the scan number from the scan file name using re
-#     scan_number = re.search(r"scan_(\d+)\.ms", ms_scan).group(1)
-#     return int(scan_number)
+def extract_scan_number(ms_scan):
+    # Extract the scan number from the scan file name using re
+    scan_number = re.search(r"scan_(\d+)\.ms", ms_scan).group(1)
+    return int(scan_number)
 
-
-#________________________________________________________________________________________________________________________________________________________
-
-
-def extract_and_save_scan_numbers(ms, output_file):
-    '''
-    Extracts unique scan numbers from the Measurement Set
-    measurement_set (str): Measurement Set path
-    output_file (str): Output file path to save the scan numbers
-    Returns:
-    List[str]: List of unique scan numbers as strings
-    '''
-    print("Extracting scan numbers from {}...".format(ms))
-
-    #print(f"Extracting scan numbers from {ms} ...")
-    
-    scans = []
-    
-    with table(ms, ack=False) as maintab:
-        scan_numbers = list(numpy.unique(maintab.getcol('SCAN_NUMBER')))
-        scans = [str(scan) for scan in scan_numbers]
-
-    print("Unique scan numbers extracted:")
-    print(scans)
-
-    # Save scan numbers to the output file
-    with open(output_file, 'w') as file:
-        file.write('\n'.join(scans))
-
-    print("Scan numbers saved to {}...".format(output_file))
-    
-    return scans
-
-
-#________________________________________________________________________________________________________________________________________________________
 
 def rename_model_data_column1(ms, oldname, newname):
 
@@ -126,7 +87,6 @@ def rename_model_data_column(ms, oldname, newname):
     except Exception as e:
         print(f"An error occurred while processing {ms}: {e}")
 
-##########################################################################################################################################################
 
 def rename_columns(ms_list, oldname, newname):
     '''
@@ -149,55 +109,9 @@ def rename_columns(ms_list, oldname, newname):
         print("Renaming completed for {}.".format(ms_name))
     print("Rename column completed successfully.")
 
-#________________________________________________________________________________________________________________________________________________________
 
-def get_old_coords(ms_list, output_file):
-    '''
-    Extracts the old coordinates (ra and dec) of the foV from a measurement set using the PHASE_DIR column and writes them to a file.
+def get_scans_info(ms, output_file):
 
-    Parameters:
-    ms_list (str): Path to the measurement sets files.
-    outfile (str): Path to the output file.
-
-    Returns:
-    None
-    '''
-    sorted_ms_list = sorted(ms_list, key=lambda x: int(x.split('_scan_')[1].split('.')[0]))
-
-    old_coords = []
-    for ms in sorted_ms_list:
-
-        print("Processing {}...".format(ms))
-        # 1. Read the PHASE_DIR column, the values in radians
-        field_dir = table("{}::FIELD".format(ms), readonly=True)
-        phase_dir = field_dir.getcol("PHASE_DIR")
-
-        # Extract the RA and Dec values from the PHASE_DIR column
-        ra = phase_dir[0,0,0]
-        dec = phase_dir[0,0,1]
-
-        #2.convert to sky coordinates hms/dms
-        sk = SkyCoord(ra*u.rad, dec*u.rad)
-
-        # format th ra to hms
-        ra_hms = sk.ra.to_string(unit=u.hourangle, pad=True)#, precision=1)
-
-        # format dec to dms
-        dec_dms = sk.dec.to_string(unit=u.degree, pad=True, alwayssign= True)#,precision=1)
-        old_coords.append("{} {}".format(ra_hms, dec_dms))
-        field_dir.close()
-        print("Processing of {} complete.".format(ms))
-
-    with open(output_file,'wt') as f:
-        for old_coord in old_coords:
-            f.write(old_coord)
-            f.writelines('\n')
-    print("Old coordinates extraction complete.")
-    return old_coords
-
-#________________________________________________________________________________________________________________________________________________________
-
-def get_scan_info(ms, output_file):
     '''
     Extracts the coordinates of the Sun from a measurement set and writes them to a file.
     Also writes the scan number and the name of the eventual per-scan MS
@@ -209,14 +123,15 @@ def get_scan_info(ms, output_file):
     Returns:
     None
     '''
+
     def format_coords(ra0,dec0):
         c = SkyCoord(ra0*u.deg,dec0*u.deg,frame='fk5')
         #hms = c.ra.to_string(u.hour, precision=1, pad=True)
         # Format Dec without decimal seconds
         #dms = c.dec.to_string(u.deg, precision=1, pad=True) 
         #return hms, dms
-        hms = str(c.ra.to_string(u.hour, precision=1))
-        dms = str(c.dec.to_string(u.deg, precision=1))
+        hms = str(c.ra.to_string(u.hour, pad=True, precision=1))
+        dms = str(c.dec.to_string(u.deg, pad=True, precision=1))
         #dms = str(c.dec)
         return hms,dms
 
@@ -225,23 +140,35 @@ def get_scan_info(ms, output_file):
     obs_lon = 21.443001467965008
     loc = EarthLocation.from_geodetic(obs_lat, obs_lon)
 
-    maintab = table(ms, ack=False)
+    fieldtab = table(f'{ms}::FIELD')
+    phase_dir = fieldtab.getcol("PHASE_DIR")
+    fieldtab.close()
+
+    # Extract the RA and Dec values from the PHASE_DIR column
+    ra_orig = phase_dir[0,0,0]
+    dec_orig = phase_dir[0,0,1]
+
+    ra_orig_hms, dec_orig_dms = format_coords(ra_orig,dec_orig)
+
+    maintab = table(ms)
     scans = list(numpy.unique(maintab.getcol('SCAN_NUMBER')))
     lines = []
 
-    print("Extracting Sun coordinates from {}...".format(ms))
+    print(f"Determining per-scan solar coordinates from {ms}")
     for scan in scans:
+        print(f"Processing scan {scan}")
         scan_ms = ms.replace('.ms',f'_scan_{scan}.ms')
         subtab = maintab.query(query='SCAN_NUMBER==' + str(scan))
         t_scan = numpy.mean(subtab.getcol('TIME'))
         t = Time(t_scan / 86400.0, format='mjd')
+        subtab.close()
 
         with solar_system_ephemeris.set('builtin'):
             sun = get_body('Sun', t, loc)
             sun_ra = sun.ra.value
             sun_dec = sun.dec.value
-            sun_hms, sun_dms = format_coords(sun_ra, sun_dec)
-            lines.append(f"{scan_ms} {scan} {sun_hms} {sun_dms}")
+            sun_ra_hms, sun_dec_dms = format_coords(sun_ra, sun_dec)
+            lines.append(f"{scan_ms} {scan} {sun_ra_hms} {sun_dec_dms} {ra_orig_hms} {dec_orig_dms}")
 
     maintab.close()
 
@@ -250,98 +177,60 @@ def get_scan_info(ms, output_file):
             f.write(line + '\n')
 
     print("Per scan information extracted and saved to {}.".format(output_file))
+    print("Per-row format is scan_ms scan_number sun_ra_hms sun_dec_dms ra_orig_hms dec_orig_dms")
 
 
-#________________________________________________________________________________________________________________________________________________________
-
-def read_scan_info(input_file):
+def read_scans_info(input_file):
     '''
-    Open the scan info text file written by get_scan_info and return its contents
+    Open the scan info text file written by get_scans_info and return its contents
     '''
-    scan_info = []
+    scans_info = []
     with open(input_file, 'r') as file:
         for line in file:
-            opms, scan, ra, dec = line.strip().split() # Assuming RA and Dec are separated by a space
-            scan_info.append((opms, scan, ra, dec))
-    return scan_info
+            opms, scan, sun_ra, sun_dec, orig_ra, orig_dec = line.strip().split() # Assuming RA and Dec are separated by a space
+            scans_info.append((opms, scan, sun_ra, sun_dec, orig_ra, orig_dec))
+    return scans_info
 
 
-# #________________________________________________________________________________________________________________________________________________________
-
-# def shift_coordinates(ms_list, coords, splitted_ms_dir, datacolumn='all'):
-#     '''
-#     A funtion that takes a list of scans and coordinates shift/rephase it for a specific colunm (CORRECTED_DATA) and iutput in the splitted_ms_dir directory 
-#     Parameters:
-#     ms_list (list): Path to the Measurement Sets.
-#     coords (File): Path to the coordinate file.
-#     splitted_ms_dir (Directory): Path to the scans directory
-#     datacolumn (str): Datacolumn to use (when not defined default is 'all').
-#     '''
-#     coordinates = []
-#     with open(coords, 'r') as file:
-#         for line in file:
-#             ms, ra, dec = line.strip().split() # Assuming RA and Dec are separated by a space
-#             coordinates.append((ms, ra, dec))
-
-#     #Sort the ms_list in numerical order
-#     sorted_ms_list = sorted(ms_list, key=lambda x: int(x.split('_scan_')[1].split('.')[0]))
-#     print(sorted_ms_list)
-#     chgcentre_path= '/home/samboco/solarKAT/Git_clone/wsclean/build/chgcentre'
-
-#     for ms, (ra, dec) in zip(sorted_ms_list, coordinates):
-#         #for ms in sorted_ms_list:
-#         command=[chgcentre_path, ms, ra, dec]
-#         try:
-#             subprocess.run(command, check=True)
-#             print("Successfully processed RA: {}, Dec:{} for MS: {}".format(ra, dec, ms))
-#         except subprocess.CalledProcessError as e:
-#             print("Error processing RA: {}, Dec: {} for MS: {}".format(ra, dec, ms))
-#             print("Error message: {}".format(e))
-
-
-
-#________________________________________________________________________________________________________________________________________________________
-
-
-def create_ds9_region_from_file(input_file, output_dir, ms):
+def create_ds9_region_from_file(input_file, output_dir):
     """
-    Function to create a DS9 region file for each coordinate in the input file
+    Function to create a DS9 region file for each coordinate in the scan info file
     """
-    #Open the MS table
-    tab = table(ms, readonly=True)
-    # Extract the scan numbers
-    scan_numbers = list(np.unique(tab.getcol('SCAN_NUMBER')))
-    # Close the MS table
-    tab.close()
+    # #Open the MS table
+    # tab = table(ms, readonly=True)
+    # # Extract the scan numbers
+    # scan_numbers = list(np.unique(tab.getcol('SCAN_NUMBER')))
+    # # Close the MS table
+    # tab.close()
 
     with open(input_file, 'r') as f:
-        for i, line in enumerate(f):
-            ra, dec = map(str.strip, line.split())
-            print('RA in hms format:', ra, 'DEC in dms format:', dec, output_dir)
-            print('Processing coordinates for scan {}...'.format(scan_numbers[i]))
-
+        line = f.readline()
+        while line:
+            cols = line.split()
+#            scan_ms = cols[0]
+            scan_number = cols[1]
+            ra = cols[2]
+            dec = cols[3]
+            print(f'Solar RA is {ra} and Dec is {dec} for {scan_number}')
             ra_deg = hms2deg(ra)
             dec_deg = dms2deg(dec)
-            print('RA in degrees:', ra_deg, 'DEC in degrees:', dec_deg)
-            print('Creating DS9 region for scan {}...'.format(scan_numbers[i]))
-
-            scan_number = scan_numbers[i]  # Use the scan number at the corresponding index
-            print("Creating region for scan {} ............................................".format(scan_number))
+            print(f'Creating DS9 region for scan {scan_number}')
             create_ds9_region(ra_deg, dec_deg, scan_number, output_dir)
+            line = f.readline()
+        f.close()
     print("DS9 region creation completed successfully.")
 
+
 def create_ds9_region(ra, dec, scan_number, output_dir):
-    # Function to create a DS99 region file
+    # Function to create a DS9 region file
     sun_region = f"""# Region file format: DS9 CARTA 3.0.0-beta.3 
 global color=green dashlist=8 3 width=3 font="helvetica 10 normal roman" select=1 highlite=1 dash=0 fixed=0 edit=1 move=1 delete=1 include=1 source=1
 fk5
 circle({ra}, {dec}, 1188.0000") # color=green
 """
 #The UHF band images of the sun has a radius of 1062.9118 and the L bands 1188.0000"
-    with open("{}/sun-region-{}.reg".format(output_dir, scan_number), 'w') as f:
+    with open(f"{output_dir}/sun-region-scan_{scan_number}.reg", 'w') as f:
         f.write(sun_region)
-
-#_____________________________________________________________________________________________________________________________________________________
 
 
 def add_column_to_ms(ms, colnames, likecol):
@@ -374,13 +263,8 @@ def add_column_to_ms(ms, colnames, likecol):
     return success
 
 
-#________________________________________________________________________________________________________________________________________________________
-
-
-#Copying Model data into the model-data-sun in the  ooriginal MS
-
 def copy_model_data_to_model_data_sun(ms, ms_list, copycol, tocol):
-    print("Copying {} to {} in {}...".format(copycol, tocol, ms))
+    print(f"Copying model solar visibilities back to original MS")
 
     # Open the main MS table as maintab
     maintab = table(ms, readonly=False)
@@ -427,28 +311,11 @@ def copy_model_data_to_model_data_sun(ms, ms_list, copycol, tocol):
 
             # Close the source_subtab
             source_subtab.close()
-            print("Copy completed for scan {}.".format(scan_number))
+            print(f"   Copied {copycol} from {ms_scan} to {tocol} in {ms}")
 
     # Close the maintab
     maintab.close()
 
-    print("Copying {} to {} in {} completed successfully.".format(copycol, tocol, ms))
-
-
-#________________________________________________________________________________________________________________________________________________________
-
-def get_sun_dirs(coords):
-    '''
-    Open the coords file and return a list of tuples with (RA,Dec,MS) for each scan
-    '''
-    coordinates = []
-    with open(coords, 'r') as file:
-        for line in file:
-            ra, dec, ms = line.strip().split()
-            coordinates.append((ra,dec))
-
-    return coordinates
-
-#________________________________________________________________________________________________________________________________________________________
+    print(f"Stored solar model visibilities in {tocol} in {ms}")
 
 
