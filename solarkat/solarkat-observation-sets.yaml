@@ -1,4 +1,6 @@
 obs:
+  info: "Specify ms (the input Measurement Set) and dir_out (the working directory for SolarKAT)."
   L1:
     ms: 1696746197_sdp_l0_1024ch_SN2021smj_smol.ms
     dir_out: obs_1696746197_solarkat
+ 

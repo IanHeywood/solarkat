@@ -6,6 +6,7 @@ import numpy
 #import sys, os
 #import subprocess
 import numpy as np
+import sys
 from astropy.time import Time
 from casacore.tables import table
 from astropy import units as u
@@ -47,13 +48,11 @@ def rename_model_data_column1(ms, oldname, newname):
     oldname (str): Name of the column to be renamed.
     newname (str): New name for the column.
     '''
-    print("Processing {}...".format(ms))
     # open the MS table in read-write mode
     ms = table(ms, readonly=False)
     # rename the 'MODEL_DATA' column to 'MODEL_DATA_ORIGINAL'
     ms.renamecol(oldname, newname)
-    #print(f"Column '{oldname}' renamed to '{newname}' in {ms}.")
-    print("Column '{}' renamed to '{}' in {}.".format(oldname, newname, ms))
+    print(f"Column '{oldname}' renamed to '{newname}' in {ms}.")
 
     # close the MS table
     ms.close()
@@ -68,7 +67,6 @@ def rename_model_data_column(ms, oldname, newname):
     oldname (str): Name of the column to be renamed.
     newname (str): New name for the column.
     """
-    print(f"Processing: {ms}...")
 
     try:
         # Open the MS table in read-write mode
@@ -94,7 +92,7 @@ def rename_columns(ms_list, oldname, newname):
     '''
     for ms_name in ms_list:
 
-        print("Renaming column '{}' to '{}' in {}...".format(oldname, newname, ms_name))
+        print(f"Renaming column {oldname} to {newname} in {ms_name}")
 
         '''
         Open the MS table in read-write mode
@@ -239,10 +237,10 @@ def add_column_to_ms(ms, colnames, likecol):
     """
     success = False
     try:
-        print("Opening {}...".format(ms))
+        print(f"Opening {ms}")
         tb = table(ms, readonly=False)
     except Exception as e:
-        print("Error: {}".format(e))
+        print(f"Error: {e}")
         return success
     
     for colname in colnames:
@@ -251,71 +249,201 @@ def add_column_to_ms(ms, colnames, likecol):
             Get column description from column 'like_col'
             """
             desc = tb.getcoldesc(likecol)
-            desc[str('name')] = str(colname)
-            desc[str('comment')] = str(desc['comment'].replace(" ", "_"))
-            dminfo = tb.getdminfo(likecol)
-            dminfo[str("NAME")] = "{}-{}".format(dminfo["NAME"], colname) 
-            print("Adding column '{}' to {}...".format(colname, ms))       
-            tb.addcols(desc, dminfo)
-            success = True
+            desc[('name')] = colname
+            desc['comment'] = desc['comment'].replace(' ','_')
+            # dminfo = tb.getdminfo(likecol)
+            # dminfo[str("NAME")] = "{}-{}".format(dminfo["NAME"], colname) 
+            print(f"Adding column {colname} to {ms}")       
+            tb.addcols(desc)
+
+
+            # print(f'Initialising {colname}')
+            # chunk_size = 10000  
+            # nrows = tb.nrows()
+            # data_shape = tb.getcell(likecol, 0).shape  
+            # # Loop over MS in chunks
+            # for start in range(0, nrows, chunk_size):
+            #     end = min(start + chunk_size, nrows)
+            #     num_rows = end - start
+
+            #     print(f"Filling rows {start} to {end-1}")
+
+            #     # Create only a small chunk in memory
+            #     chunk_array = np.zeros((num_rows, *data_shape), dtype=np.complex64)
+
+            #     # Write the chunk
+            #     tb.putcol(colname, chunk_array, startrow=start)
+
     print("Columns added to {} successfully.".format(ms))
     tb.close()
-    return success
 
 
-def copy_model_data_to_model_data_sun(ms, ms_list, copycol, tocol):
+
+
+def copy_solar_model(ms, scans_info, perscan_dir_out, copycol, tocol, rowchunk):
+    # Open the original MS
+    target_tab = table(ms, readonly=False)
+    colnames = target_tab.colnames()
+
+    if tocol in colnames:
+        print(f'Found {tocol} column in {ms}')
+    else:
+        print(f'{tocol} column not found in {ms}, adding.')
+        desc = maintab.getcoldesc('DATA')
+        desc['name'] = tocol
+        desc['comment'] = desc['comment'].replace(' ','_')
+        maintab.addcols(desc)
+
+    print(f'Row chunk size for copying is {rowchunk}')
     print(f"Copying model solar visibilities back to original MS")
+    for scan in scans_info:
+        ms_scan = perscan_dir_out+'/'+scan[0]
+        scan_number = str(scan[1])
 
-    # Open the main MS table as maintab
-    maintab = table(ms, readonly=False)
+        copy_tab = table(ms_scan, readonly=True)
+        copy_data = copy_tab.getcol(copycol)
 
-    # Get the unique scan numbers from the SCAN_NUMBER column in maintab
-    scans = list(np.unique(maintab.getcol('SCAN_NUMBER')))
+        target_subtab = target_tab.query(query=f'SCAN_NUMBER=={scan_number}')
+        target_subtab_data = target_subtab.getcol('DATA')
 
-    for scan_number in scans:
+        print(f'Source shape: {copy_data.shape}')
+        print(f'Target shape: {target_subtab_data.shape}')
 
-        # Find the corresponding MS scan file for the current scan number
-        ms_scan = next((ms_scan for ms_scan in ms_list if extract_scan_number(ms_scan) == scan_number), None)
+        if copy_data.shape != target_subtab_data.shape:
+            print(f'Shape mismatch between source data and target data, please check')
+            sys.exit()
 
-        if ms_scan:
-            # Open the MS scan as the source_subtab
-            source_subtab = table(ms_scan, readonly=True)
+        nrows = copy_tab.nrows()
+        for start_row in range(0,nrows,rowchunk):
+            nr = min(rowchunk,nrows-start_row)
+            print(f'Copying rows: {start_row} to {start_row+nr}')
+            target_subtab.putcol(tocol,copy_tab.getcol(copycol,start_row,nr),start_row,nr)
 
-            # Query the target_subtab to get the rows for the current scan number
-            target_rows = maintab.query(query='SCAN_NUMBER==' + str(scan_number))
+        target_tab.flush()
 
-            # Get the MODEL_DATA from the source_subtab
-            source_model_data = source_subtab.getcol(copycol)
+        # Close the source_subtab
+        target_subtab.close()
+        print(f"Copied {copycol} from {ms_scan} to {tocol} in {ms}")
 
-            # Get the shape of the source_model_data
-            source_shape = source_model_data.shape
+    # Close the target MS
+    target_tab.close()
 
-            # Check if the target_subtab has the tocol column
-            if tocol not in target_rows.colnames():
-                # Add the tocol column to the target_subtab with the source_shape
-                target_rows.addcols(
-                    columns={tocol: {'datatype': 'complex', 'shape': source_shape}}
-                )
+    print(f"Done.")
 
-            # Get the MODEL_DATA_SUN from the target_subtab
-            target_model_data_sun = target_rows.getcol(tocol)
+        # print(f'Processing {ms_scan}')
+        # # Open the per-scan MS 
+        # source_ms = table(ms_scan, readonly=True)
+        # source_data = source_ms.getcol(copycol)
 
-            # Update the target_model_data_sun with the source_model_data
-            target_model_data_sun[:] = source_model_data
+        # target_subtab = maintab.query(query=f'SCAN_NUMBER=={scan_number}')
+        # target_data = target_subtab.getcol('DATA')
 
-            # Put the updated MODEL_DATA_SUN back into the target_subtab
-            target_rows.putcol(tocol, target_model_data_sun)
+        # print(f'IN: {source_data.shape}, OUT: {target_data.shape}')
+        # if source_data.shape != target_data.shape:
+        #     print(f'Shape mismatch between source data and target data, please check')
+        #     sys.exit()
 
-            # Flush the changes to disk
-            maintab.flush()
+        # nrows = source_ms.nrows()
+        # for start_row in range(0,nrows,rowchunk):
+        #     nr = min(rowchunk,nrows-start_row)
+        #     print(f'--- Copying rows: {start_row} to {start_row+nr}')
+        #     target_subtab.putcol(tocol,target_subtab.getcol(copycol,start_row,nr),start_row,nr)
+       
 
-            # Close the source_subtab
-            source_subtab.close()
-            print(f"   Copied {copycol} from {ms_scan} to {tocol} in {ms}")
 
-    # Close the maintab
-    maintab.close()
+        # putcol(columnname, value, startrow=0, nrow=-1, rowincr=1)
 
-    print(f"Stored solar model visibilities in {tocol} in {ms}")
+        # # Query the target_subtab to get the rows for the current scan number
+        # target_rows = maintab.query(query='SCAN_NUMBER==' + str(scan_number))
+
+        # # Get the MODEL_DATA from the source_subtab
+        # source_model_data = source_subtab.getcol(copycol)
+
+        # # Get the shape of the source_model_data
+        # source_shape = source_model_data.shape
+
+        # # Check if the target_subtab has the tocol column
+        # if tocol not in target_rows.colnames():
+        #     # Add the tocol column to the target_subtab with the source_shape
+        #     target_rows.addcols(
+        #         columns={tocol: {'datatype': 'complex', 'shape': source_shape}}
+        #     )
+
+        # # Get the MODEL_DATA_SUN from the target_subtab
+        # target_model_data_sun = target_rows.getcol(copycol)
+
+        # # Update the target_model_data_sun with the source_model_data
+        # target_model_data_sun[:] = source_model_data
+
+        # # Put the updated MODEL_DATA_SUN back into the target_subtab
+        # target_rows.putcol(tocol, target_model_data_sun)
+
+        # Flush the changes to disk
+
+# -------------------
+
+# def copy_model_data_to_model_data_sun(ms, ms_list, copycol, tocol):
+#     print(f"Copying model solar visibilities back to original MS")
+
+#     # Open the main MS table as maintab
+#     maintab = table(ms, readonly=False)
+#     colnames = maintab.colnames()
+#     if tocol in colnames:
+#         print(f'Found MODEL_DATA column in {ms}')
+#     else:
+#         print(f'MODEL_DATA column not found in {ms}, adding.')
+#         desc = maintab.getcoldesc('DATA')
+#         desc['name'] = tocol
+#         desc['comment'] = desc['comment'].replace(' ','_')
+#         maintab.addcols(desc)
+
+#     # Get the unique scan numbers from the SCAN_NUMBER column in maintab
+#     scans = list(np.unique(maintab.getcol('SCAN_NUMBER')))
+
+#     for scan_number in scans:
+
+#         # Find the corresponding MS scan file for the current scan number
+#         ms_scan = next((ms_scan for ms_scan in ms_list if extract_scan_number(ms_scan) == scan_number), None)
+
+#         if ms_scan:
+#             # Open the MS scan as the source_subtab
+#             source_subtab = table(ms_scan, readonly=True)
+
+#             # Query the target_subtab to get the rows for the current scan number
+#             target_rows = maintab.query(query='SCAN_NUMBER==' + str(scan_number))
+
+#             # Get the MODEL_DATA from the source_subtab
+#             source_model_data = source_subtab.getcol(copycol)
+
+#             # Get the shape of the source_model_data
+#             source_shape = source_model_data.shape
+
+#             # Check if the target_subtab has the tocol column
+#             if tocol not in target_rows.colnames():
+#                 # Add the tocol column to the target_subtab with the source_shape
+#                 target_rows.addcols(
+#                     columns={tocol: {'datatype': 'complex', 'shape': source_shape}}
+#                 )
+
+#             # Get the MODEL_DATA_SUN from the target_subtab
+#             target_model_data_sun = target_rows.getcol(tocol)
+
+#             # Update the target_model_data_sun with the source_model_data
+#             target_model_data_sun[:] = source_model_data
+
+#             # Put the updated MODEL_DATA_SUN back into the target_subtab
+#             target_rows.putcol(tocol, target_model_data_sun)
+
+#             # Flush the changes to disk
+#             maintab.flush()
+
+#             # Close the source_subtab
+#             source_subtab.close()
+#             print(f"   Copied {copycol} from {ms_scan} to {tocol} in {ms}")
+
+#     # Close the maintab
+#     maintab.close()
+
+#     print(f"Stored solar model visibilities in {tocol} in {ms}")
 
 

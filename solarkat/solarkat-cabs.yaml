@@ -107,19 +107,42 @@ cabs:
         dtype: str
         required: true
 
-  copy_model_data_to_model_data_sun:
-    command: solarkat.copy_model_data_to_model_data_sun 
-    info: 'copying a column from a list of MS to a single ms'
+  copy_solar_model:
+    command: solarkat.copy_solar_model
     flavour: python
     inputs:
-      ms_list:
-        dtype: List[MS]
       ms:
         dtype: MS
+        required: true
+      scans_info:
+        dtype: List[Tuple[str,str,str,str,str,str]]
+        required: true
+      perscan_dir_out:
+        dtype: str
       copycol:
         dtype: str
+        required: true
       tocol:
         dtype: str
+        required: true
+      rowchunk:
+        dtype: int
+        default: 200000
+        required: false
+
+  # copy_model_data_to_model_data_sun:
+  #   command: solarkat.copy_model_data_to_model_data_sun 
+  #   info: 'copying a column from a list of MS to a single ms'
+  #   flavour: python
+  #   inputs:
+  #     ms_list:
+  #       dtype: List[MS]
+  #     ms:
+  #       dtype: MS
+  #     copycol:
+  #       dtype: str
+  #     tocol:
+  #       dtype: str
 
 lib:
 
@@ -170,6 +193,7 @@ lib:
           cab: wsclean
           params:
             scale: 1.1asec 
+            use-wgridder: true
             niter: 0
             nchan: 1
             size: 6000
@@ -202,7 +226,7 @@ lib:
             outcatalog: =UNSET
 
     clean-image-sun-loop:
-      info: "Make a deconvolve image of the Sun for each phase-rotated MS"
+      info: "Make a deconvolved image of the Sun for each phase-rotated MS"
       inputs:
         scans_info:
           dtype: List[Tuple[str,str,str,str,str,str]]
@@ -216,8 +240,6 @@ lib:
           dtype: str
         temp_dir:
           dtype: str
-#        prefix:
-#          dtype: str
       for_loop:
         var: current_scan
         over: scans_info
@@ -227,22 +249,54 @@ lib:
           cab: wsclean
           params:
             abs-mem: 110
-            j: 8
+            threads: 8
             deconvolution-threads: 8
             ms: ='{recipe.perscan_dir_out}/'+GETITEM(recipe.current_scan,0)
             size:  6000
             scale: 1.1asec 
+            use-wgridder: true
             niter: 12000
             multiscale: true
             join-channels: true 
             auto-threshold: 1
-            fit-spectral-pol: 4
+            fit-spectral-pol: 3
             save-source-list: true 
             nchan: 6
             column: CORRECTED_DATA 
             temp-dir: =recipe.temp_dir
             prefix: ="{recipe.clean_image_sun_dir}/img_"+STRIPEXT(BASENAME(GETITEM(recipe.current_scan,0)))
             fits-mask: ="{recipe.dirty_image_sun_dir}/img_"+STRIPEXT(BASENAME(GETITEM(recipe.current_scan,0)))+"-image.mask.fits"
+
+    predict-solar-model-loop:
+      info: "Degrid the multiscale solar clean component model into the MODEL_DATA column of the per-scan Measurement Sets"
+      inputs:
+        scans_info:
+          dtype: List[Tuple[str,str,str,str,str,str]]
+        # dir_out:
+        #   dtype: str
+        perscan_dir_out:
+          dtype: str
+        clean_image_sun_dir:
+          dtype: str
+        temp_dir:
+          dtype: str
+      for_loop:
+        var: current_scan
+        over: scans_info
+        display_status: "{index1}/{total}"
+      steps:
+        predict-sun:
+          cab: wsclean
+          params:
+            scale: 1.1asec 
+            use-wgridder: true
+            predict: true
+            size: 6000
+            nchan: 6
+            ms: ='{recipe.perscan_dir_out}/'+GETITEM(recipe.current_scan,0)
+            temp-dir: =recipe.temp_dir
+            save-source-list: =UNSET 
+            prefix: ="{recipe.clean_image_sun_dir}/img_"+STRIPEXT(BASENAME(GETITEM(recipe.current_scan,0)))
 
     chgcentre-revert-loop:
       info: "Run chgcentre on the per-scan Measurement Sets to rotate back to the original phase centre"

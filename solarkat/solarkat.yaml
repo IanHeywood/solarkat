@@ -7,7 +7,7 @@ opts:
   log:
     dir: logs/log-{config.run.datetime}
     name: log-{info.fqname}
-    nest: 2 # Levels of log splitting (1 = single log file)
+    nest: 2 
     symlink: log
   backend:
     select: singularity
@@ -61,7 +61,11 @@ solarkat:
       mkdir: true
     qcal_dir_out:
       dtype: Directory
-      default: "{current.dir_out}/peeled.qc"
+      default: "{current.dir_out}/quartical"
+      mkdir: true
+    qcal_gain_dir_out:
+      dtype: Directory
+      default: "{current.qcal_dir_out}/peel_gains.qc"
       mkdir: true
     clean_image_sun_dir:
       dtype: str
@@ -100,22 +104,15 @@ solarkat:
     #     fits-mask: "combomaskfilled2.fits"
 
 
-    add-sun-model-data-columnn:
-      info: "Add a MODEL_DATA_SUN column to the original MS"
-      cab: add_model_data_column
-      params:
-        ms:  =recipe.ms
-        colnames: ['MODEL_DATA_SUN']
-        likecol: 'MODEL_DATA'
 
-    backup-original-model-data:
-      info: 'Rename the MODEL_DATA visibilities to ORIGINAL_MODEL_DATA (to backup the original MODEL_DATA column)'
-      cab: rename_model_data
-#      skip: false
-      params:
-        ms: =recipe.ms
-        oldname: 'MODEL_DATA'
-        newname: 'MODEL_DATA_ORIGINAL' 
+#     backup-original-model-data:
+#       info: 'Rename the MODEL_DATA visibilities to ORIGINAL_MODEL_DATA (to backup the original MODEL_DATA column)'
+#       cab: rename_model_data
+# #      skip: false
+#       params:
+#         ms: =recipe.ms
+#         oldname: 'MODEL_DATA'
+#         newname: 'MODEL_DATA_ORIGINAL' 
     
     get-scans-info: 
       info: 'Get information the scans in the input MS, including the RA and Dec of the Sun'
@@ -199,32 +196,14 @@ solarkat:
         clean_image_sun_dir: =recipe.clean_image_sun_dir
         temp_dir: =recipe.temp_dir
 
-    # predict-sun-model:
-    #   info: " Predict Sun Model to the MODEL_DATA column."     
-    #   params: 
-    #     ms_list: =GLOB("{recipe.dir_out}/{recipe.perscan_dir_out}/*_scan_*.ms")
-    #   recipe:
-    #     inputs:
-    #       scans:
-    #         dtype: List[MS]
-    #       ms_list:
-    #         dtype: List[MS]
-    #       mask_list:
-    #         dtype: List[File]
-    #     for_loop:
-    #       var: ms 
-    #       over: ms_list
-    #     steps:
-    #       predict:
-    #         cab: wsclean        
-    #         params:
-    #           size:   6000 
-    #           scale: 1.1asec
-    #           predict: true
-    #           nchan: 4
-    #           ms: '{recipe.ms}'
-    #           temp-dir: =root.dirs.temp
-    #           prefix: ="{root.dir_out}/{root.perscan_dir_out}/{root.clean_image_sun}/" + STRIPEXT(BASENAME(recipe.ms)) 
+    run-predict-solar-model-loop:
+      info: "Degrid the multiscale solar clean component model into the MODEL_DATA column of the per-scan Measurement Sets"
+      recipe: predict-solar-model-loop
+      params:
+        scans_info: =steps.read-scans-info.scans_info
+        perscan_dir_out: =recipe.perscan_dir_out
+        clean_image_sun_dir: =recipe.clean_image_sun_dir
+        temp_dir: =recipe.temp_dir
 
     run-chgcentre-revert-loop:
       info: "Rotate the phase centres of the per-scan Measurement Sets back to their original positions"
@@ -234,14 +213,24 @@ solarkat:
         # dir_out: =recipe.dir_out
         perscan_dir_out: =recipe.perscan_dir_out
 
+    add-sun-model-data-column:
+      info: "Add a MODEL_DATA_SUN column to the original MS"
+      cab: add_column_to_ms
+      params:
+        ms:  =recipe.ms
+        colnames: ['MODEL_DATA_SUN']
+        likecol: 'DATA'
+
     copy-solar-model:
-      info: 'Copying model solar visibilties from per-scan Measurement Sets into the MODEL_DATA_SUN column of the original MS'
-      cab:  copy_model_data_to_model_data_sun
+      info: "Copy model solar visibilties from per-scan Measurement Sets into the MODEL_DATA_SUN column of the original MS"
+      cab: copy_solar_model
       params:
         ms: =recipe.ms
+        scans_info: =steps.read-scans-info.scans_info
+        perscan_dir_out: =recipe.perscan_dir_out
         copycol: 'MODEL_DATA'
         tocol: 'MODEL_DATA_SUN'
-        ms_list:  =GLOB("recipe.perscan_dir_out}/*_scan_*")
+        rowchunk: 200000
 
     peel-sun:
       info: 'Perform delay self-calibration and solar peeling on the input MS'
@@ -263,8 +252,8 @@ solarkat:
         solver.robust: false 
         solver.threads: 4
         dask.threads: 8
-        output.gain_directory: '{recipe.dir_out}/{recipe.qcal_output_dir}/peeled.qc'
-        output.log_directory: '{recipe.dir_out}/{recipe.qcal_output_dir}/'
+        output.gain_directory: '{recipe.qcal_gain_dir_out}'
+        output.log_directory: '{recipe.qcal_dir_out}'
         output.overwrite: true
         output.products: [corrected_residual]
         output.columns: [CORRECTED_RESIDUAL]
@@ -292,36 +281,36 @@ solarkat:
     #     versionname: "After-3GC.yml"
     #     mode: save
 
-    # image-7:
-    #   info: "Deconvolve the improved image"
-    #   cab: wsclean
-    #   params:
-    #     abs-mem: 110
-    #     j: 8
-    #     deconvolution-threads: 8
-    #     ms: =recipe.ms
-    #     prefix: '{recipe.image-prefix}-final'
-    #     scale: 1.1asec
-    #     parallel-reordering: 8
-    #     use-wgridder: true
-    #     parallel-deconvolution: 2560
-    #     padding: 2.0
-    #     niter: 110000
-    #     size: 10240 
-    #     nchan: 8
-    #     column: CORRECTED_RESIDUAL
-    #     auto-threshold: =UNSET
-    #     threshold: 3e-6
-    #     mgain: 0.9
-    #     weight: 'briggs -0.3'
-    #     multiscale: true
-    #     multiscale-scales: [0,2,4,8]
-    #     join-channels: true
-    #     fit-spectral-pol: 4 
-    #     temp-dir: =recipe.dirs.temp
-    #     # Note that fits-mask is non-standard for general operation, just my NGC4410 test case
-    #     # This is a general question, of how to handle the case where the user supplies
-    #     # already self-calibrated data, not just 1GC-calibrated (separate recipe again?)
-    #     fits-mask: "combomaskfilled2.fits"
+    image-7:
+      info: "Deconvolve the improved image"
+      cab: wsclean
+      params:
+        abs-mem: 110
+        j: 8
+        deconvolution-threads: 8
+        ms: =recipe.ms
+        prefix: '{recipe.image-prefix}-final'
+        scale: 1.1asec
+        parallel-reordering: 8
+        use-wgridder: true
+        parallel-deconvolution: 2560
+        padding: 2.0
+        niter: 110000
+        size: 10240 
+        nchan: 8
+        column: CORRECTED_RESIDUAL
+        auto-threshold: =UNSET
+        threshold: 3e-6
+        mgain: 0.9
+        weight: 'briggs -0.3'
+        multiscale: true
+        multiscale-scales: [0,2,4,8]
+        join-channels: true
+        fit-spectral-pol: 4 
+        temp-dir: =recipe.dirs.temp
+        # Note that fits-mask is non-standard for general operation, just my NGC4410 test case
+        # This is a general question, of how to handle the case where the user supplies
+        # already self-calibrated data, not just 1GC-calibrated (separate recipe again?)
+        fits-mask: "combomaskfilled2.fits"
 
 
